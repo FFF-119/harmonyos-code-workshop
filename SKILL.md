@@ -7,7 +7,7 @@ description: >-
   inspection, multi-device adaptation, performance optimization, or AppGallery
   Connect publishing. Focuses on practical code editing — not just documentation
   referencing, but ensuring code compiles, passes review, and ships to market.
-version: 2.0.0
+version: 2.1.0
 author: 鸿蒙代码专家团队 <839838805@qq.com>
 trigger:
   - "鸿蒙"
@@ -544,6 +544,43 @@ const response = await riskControlEngine.getRiskControlResult({
 
 **DevEco CLI**：命令行工具链，支持 CI/CD 集成，`deveco build/test/publish` 等命令。
 
+#### 6.8 ⚠️ API 26 新能力异常处理速查
+
+> 以下是碰一碰分享、闪控球、星盾引擎三个 API 26 核心新能力的常见异常场景和处理方案。
+
+**碰一碰分享常见异常**：
+
+| 异常现象 | 可能原因 | 解决方案 |
+|:---|:---|:---|
+| `knockShare` 事件不触发 | NFC 未开启 / 设备不支持 | 调用前检查 `nfcController.isNfcAvailable()` |
+| `share()` 返回 `SEND_FAILED` | 对端设备不在线 / 传输超时 | 添加重试机制，最多 3 次，间隔 2s |
+| `share()` 返回 `CANCEL_BY_RECEIVER` | 接收端主动取消 | 提示用户"对方已取消分享" |
+| `thumbnailUri` 图片不显示 | 文件路径错误 / 文件过大 | 检查 URI 是否合法，预览图 ≤ 3000×4000 px |
+| `updateShareData()` 不生效 | 在 `share()` 发送后才调用 | 必须**在 share 调用前**更新预览图 |
+| PC 精准坐标 `getInfo()` 返回 0 | 非 PC 场景 / API 版本不够 | 确认设备为 PC + API 26 Beta+ |
+| 页面关闭后仍在响应碰一碰 | 缺少 `off('knockShare')` 调用 | 检查生命周期：onPageShow 注册，onPageHide 取消 |
+
+**闪控球常见异常**：
+
+| 异常现象 | 可能原因 | 解决方案 |
+|:---|:---|:---|
+| `floatingBall.create()` 返回 null | 设备不支持 / ACL 权限未申请 | 检查 `isFloatingBallEnabled()` + `ohos.permission.USE_FLOAT_BALL` |
+| `startFloatingBall()` 抛出权限异常 | ACL 权限未在 AGC 申请 | 在 AGC → 开发服务 → ACL 权限中申请 |
+| 闪控球创建后不显示 | 应用不在前台 / 超过数量限制 | 确认应用在前台，同一设备最多同时显示 2 个 |
+| `updateFloatingBall()` 对 STATIC 模板无效 | STATIC 模板不支持更新 | 改用 NORMAL / EMPHATIC / SIMPLE 模板 |
+| `aboutToDisappear` 后闪控球未消失 | 未调用 `stopFloatingBall()` | 在 `aboutToDisappear` 中强制停止 |
+| `restoreMainWindow()` 无响应 | Want 参数错误 | 检查 bundleName 和 abilityName 是否正确 |
+
+**星盾引擎常见异常**：
+
+| 异常现象 | 可能原因 | 解决方案 |
+|:---|:---|:---|
+| `getRiskControlResult()` 返回空 | 日调用次数超限（每天 10 次） | 限制调用频率，缓存前一次结果 |
+| `importRiskFactors()` 超时 | TEE 环境初始化未完成 | 在 UIAbility.onCreate 中预初始化（需 200~500ms） |
+| JWS 签名验证失败 | nonce 不匹配 / 证书链不一致 | 确认 nonce 与请求时一致，用华为 Root CA 验证 x5c |
+| 模拟器上报错 | 星盾依赖真实 TEE 硬件 | 必须真机调试，模拟器不可用 |
+| AGC 控制台找不到星盾开关 | 未在该应用下开通 | 在 AGC → 开发服务 → 星盾机密风控引擎 手动开通 |
+
 ### 7. ArkTS V2 状态管理装饰器（API 26+）
 
 | 装饰器 | 说明 |
@@ -985,6 +1022,27 @@ Index.ets 中 import 放在错误位置 → @Entry/@Component 装饰器被截断
 - ForEach 必须提供唯一键（第三个参数 `item => item.id`）
 - Row/Column.alignItems 接受不同枚举类型（Row→VerticalAlign，Column→HorizontalAlign）
 
+#### ⑨ API 26 新能力踩坑
+> 以下踩坑来自实测 HarmonyOS 7 Beta 的碰一碰分享、闪控球、星盾引擎。
+
+| 能力 | 坑 | 正确做法 |
+|:---|:---|:---|
+| **碰一碰分享** | 以为 `off('knockShare')` 不需要传 callback 就能全部清除 | 不传 callback 确实会清空，但**如果后续还要注册不同窗口的监听，必须显式传 callback** |
+| **碰一碰分享** | `updateShareData()` 在 `share()` 之后调用，预览图不生效 | `share()` 调用前就要把预览图准备好，云端下载场景用 setTimeout 预更新再 share |
+| **闪控球** | 用了 STATIC 模板后想更新内容，发现毫无变化 | STATIC 创建后不可更新，需要改 NORMAL/EMPHATIC 模板 |
+| **闪控球** | 没有在 `aboutToDisappear` 中调用 `stopFloatingBall()` | 页面销毁后闪控球仍在，必须显式停止 |
+| **星盾引擎** | 每天前 3 次调用正常，第 4 次开始返回空结果 | 每天每设备限 10 次，超限后不报错直接返回空，需要缓存结果 |
+| **Account Kit** | 登录按钮样式在深色模式下白底白字看不清 | `LoginWithHuaweiIDButton` 自动适配主题色，但需检查应用中是否有强制覆盖样式 |
+| **Account Kit** | `authorizeWithHuaweiID` 抛 SIGN_IN_FAILED | 99% 是 AGC 上配置的签名证书指纹 SHA256 不匹配 |
+
+#### ⑩ 性能踩坑：@State 大对象 vs @Observed + @ObjectLink
+```
+踩坑：一个购物车对象 @State cart = { items: [], total: 0, discount: 0 }
+改任意字段 → 全组件 rebuild，列表闪烁 + 性能下降 60%
+↳ 修复：拆分为 @Observed CartModel + @ObjectLink 按需监听
+```
+**教训**：超过 3 个字段的对象不要直接用 @State，用 @Observed 装饰 class
+
 ### 12. 📋 代码模板库（30 个即用模板 + 5 个高级模式）
 
 > 复制即用，每段带版本标注和完整 import。
@@ -1146,7 +1204,7 @@ Index.ets 中 import 放在错误位置 → @Entry/@Component 装饰器被截断
 | **BearPi 智能养花机**（BearPi+传感器） | 自动检测土壤湿度、自动浇水 | IoT 入门经典项目，软硬结合 |
 
 > 💡 **使用建议**：当用户是初学者、对鸿蒙感到畏难时，用这些项目说明"不要被 700+ 仓库吓到，起步可以很小很酷"。
-> 注意：这两个项目是 C/C++ 硬件开发（L0~L2 层），不是 App 开发。如果用户想了解纯软件趣味项目，推荐 13.2 中的「自定义抽奖转盘」「简易计算器」等 Codelabs 案例。
+> 注意：这两个项目是 C/C++ 硬件开发（L0~L2 层），不是 App 开发。如果用户想了解纯软件趣味项目，推荐 14.2 中的「自定义抽奖转盘」「简易计算器」等 Codelabs 案例。
 
 ### 15. 👤 Account Kit 账号服务集成
 
@@ -1269,3 +1327,79 @@ const authResult = await authentication.authorizeWithHuaweiID(request);
 5. **版本标注**：每个代码块首行注释标注 API 版本：`// [API 23+] 说明`
 6. **上架护航**：用户要发布时，按 AGC 章节逐项检查
 7. **输出徽标**：代码末尾追加 `// ✅ 代码质量自检通过`
+
+### 💬 真实对话示例（快速上手）
+
+以下是 6 个典型场景的完整对话流程，帮助你快速理解本技能的工作方式：
+
+**示例 1：编译错误修复**
+```
+用户：API 26 编译报错，Navigation 路由跳转不生效
+      代码：router.pushUrl({ url: 'pages/Detail' })
+      错误：Property 'pushUrl' does not exist
+
+你：🔍 发现使用废弃 API router.pushUrl（API 26 已正式移除）
+    ✅ 修复方案：改用 NavPathStack
+    // [API 23+] Navigation 路由跳转
+    const stack = new NavPathStack();
+    stack.pushPath({ name: 'DetailPage' });
+    
+    Navigation() {
+      ...
+    }
+```
+
+**示例 2：新能力实现**
+```
+用户：API 26 碰一碰分享功能，NFC 触发后发一条链接
+
+你：📱 碰一碰分享需要 3 步：
+    1. onPageShow 注册 knockShare 监听
+    2. 构造 SharedData（含 UTD 和 URL）
+    3. onPageHide 取消监听
+    然后给出完整 TypeScript 代码示例
+```
+
+**示例 3：性能调优**
+```
+用户：列表 500 条数据滑动卡顿，用的 ForEach
+
+你：⚡ 建议改用 LazyForEach 懒加载
+    ⚠️ 注意需要实现 IDataSource 接口
+    ⚠️ 记得加第三个参数（唯一键）
+    然后给出 IDataSource 实现 + List + LazyForEach 完整代码
+```
+
+**示例 4：上架问题**
+```
+用户：AGC 审核被拒，理由是"权限声明与实际不符"
+
+你：📋 列出可能的原因：
+    1. module.json5 中声明了用不到的权限
+    2. 使用了 user_grant 权限但没有弹窗说明
+    3. 隐私标签与代码实际行为不一致
+    然后逐一给出检查步骤和修复方案
+```
+
+**示例 5：API 迁移**
+```
+用户：把这段 Kotlin 网络请求改成 ArkTS
+     Retrofit 接口：GET /api/users, 返回 List<User>
+
+你：🔄 ArkTS 使用 @ohos.net.http，写法如下：
+    1. 定义 Response 接口
+    2. http.createHttp() 发起请求
+    3. destroy() 释放资源
+    // [API 23+] 网络请求封装
+```
+
+**示例 6：架构咨询**
+```
+用户：跨 3 个页面共享购物车数据，需要实时同步
+
+你：🏗️ 推荐方案：AppStorage + @Watch
+    - 购物车数据存入 AppStorage（跨页面持久化）
+    - 各页面用 @Watch 监听变化
+    - 修改时自动同步到所有页面
+    如果涉及多端流转，再加分布式数据对象方案对比
+```
